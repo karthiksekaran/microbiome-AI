@@ -1,0 +1,417 @@
+library(DECIPHER) # This package will help in importing, maintaining, analyzing, manipulating, and exporting a massive amount of sequences.
+
+library(ape) # Analyses of Phylogenetics and Evolution package. Required for tree calculations to be used with phyloseq
+
+library(DESeq2) # This package will help analyze "differential expression" in the microbiota alongside phyloseq
+
+library(ggplot2) # Graphing package used in phyloseq. To edit the default setting of a plot, you need to use functions in this package.
+
+library(phyloseq) # The phyloseq package seeks to address issues with multiple microbiome analysis packages by providing a set of functions that internally manage the organizing, linking, storing, and analyzing of phylogenetic sequencing data. In general, this package is used for UniFrac analyses.
+
+library(plotly) # A package to create interactive web graphics of use in 3D plots
+
+library(vegan) # The vegan package provides tools for descriptive community ecology. It has most basic functions of diversity analysis, community ordination and dissimilarity analysis. In general, this package is used for Bray-Curtis and Jaccard analyses.
+
+library(philr) # This package provides functions for the analysis of compositional data 
+
+library(tidyverse) # This package is designed to make it easy to install and load multiple 'tidyverse' packages in a single step
+
+library(adespatial) # Tools for the multiscale spatial analysis of multivariate data
+
+library(devtools) # Make package development easier by providing R functions that simplify and expedite common tasks
+
+library(qiime2R) # A package for importing qiime artifacts into an R session
+
+library(MicrobeR) # Data visualization
+
+library(microbiome) # Data analysis and visualization
+
+library(microbiomeSeq) # Data analysis and visualization
+
+library("pander") # provide a minimal and easy tool for rendering R objects into Pandoc's markdown
+
+library(ranacapa) # Data analysis 
+
+library(grid) # support data visualization
+
+library(gridExtra)  # support data visualization
+
+library(knitr) # Provides a general-purpose tool for dynamic report generation in R using Literate Programming techniques.
+
+library(png) # Figure download
+
+library("ggdendro") #set of tools for dendrograms and tree plots using 'ggplot2'
+
+library(ggpubr) # publication quality figures, based on ggplot2
+
+library(RColorBrewer) # nice color options
+
+library(microbiomeutilities) # some utility tools 
+
+#------------------------------------------------------------------------------------------#
+
+phy <- qza_to_phyloseq("table.qza", "rooted-tree.qza", "taxonomy.qza","sample-metadata.tsv")
+
+# Importing ASVs abundance file
+ASVs <- read_qza("table.qza")
+# Importing metadata
+metadata <- read.table("sample-metadata.tsv", , sep='\t', header=T, row.names=1, comment="")
+metadata <- metadata[-1,] # remove the second line that specifies the data type
+# Importing tree
+tree <- read_qza("rooted-tree.qza")
+# Importing taxonomy
+taxonomy <- read_qza("taxonomy.qza")
+tax_table <- do.call(rbind, strsplit(as.character(taxonomy$data$Taxon), "; "))
+colnames(tax_table) <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+rownames(tax_table) <- taxonomy$data$Feature.ID
+
+# Creating phyloseq object
+physeq <- phyloseq(
+  otu_table(ASVs$data, taxa_are_rows = T),
+  phy_tree(tree$data),
+  tax_table(tax_table),
+  sample_data(metadata)
+)
+
+# check for features of data  
+summarize_phyloseq(physeq)
+print_ps(physeq)
+summary(sample_sums(physeq))
+
+ntaxa(physeq)
+
+nsamples(physeq)
+
+sample_names(physeq)[1:5]  
+
+rank_names(physeq)  
+
+sample_variables(physeq)  
+
+otu_table(physeq)[1:5, 1:5]  
+
+tax_table(physeq)[1:5, 1:4]
+
+plot_read_distribution(physeq, groups = "life_stage", plot.type = "density") + theme_biome_utils()
+
+physeq_rarefy <- rarefy_even_depth(physeq, rngseed=1, sample.size=0.9*min(sample_sums(physeq)), replace=F)
+
+plot_taxa_prevalence(physeq, "Phylum")
+
+#------------------------------------------------------------------------------------------#
+
+physeq_fam <- microbiome::aggregate_rare(physeq, level = "Family", detection = 50/100, prevalence = 70/100)
+
+# Alternative
+physeq_fam <- aggregate_top_taxa2(physeq, level = "Family", top = 25)
+
+physeq.fam.rel <- microbiome::transform(physeq_fam, "compositional")
+
+physeq.fam.rel <- physeq %>%
+  aggregate_rare(level = "Family", detection = 50/100, prevalence = 70/100) %>%
+  microbiome::transform(transform = "compositional")
+
+plot_composition(physeq.fam.rel,sample.sort = "life_stage", x.label = "#SampleID") + theme(legend.position = "bottom") + scale_fill_brewer("Family", palette = "Paired") + theme_bw() + theme(axis.text.x = element_text(angle = 90)) + ggtitle("Relative abundance") + theme(legend.title = element_text(size = 18))
+
+taxa_barplot(Summarize.Taxa(ASVs$data, as.data.frame(tax_table))$Family, metadata, "life_stage")
+
+# To make it interactive
+ggplotly(taxa_barplot(Summarize.Taxa(ASVs$data, as.data.frame(tax_table))$Family, metadata, "life_stage"))
+
+# save the plot
+b.plot <- taxa_barplot(Summarize.Taxa(ASVs$data, as.data.frame(tax_table))$Family, metadata, "life_stage")
+
+ggsave("barplot_family.png", b.plot,  width = 14, height = 10, dpi = 300)
+
+#------------------------------------------------------------------------------------------#
+
+taxa_heatmap(Summarize.Taxa(ASVs$data,  as.data.frame(tax_table))$Family, metadata, "life_stage")
+
+library(pheatmap)
+
+p <- plot_taxa_heatmap(physeq,
+                       subset.top = 25,
+                       VariableA = c("life_stage"),
+                       transformation = "log10",
+                       cluster_rows = T,
+                       cluster_cols = F,
+                       show_colnames = F,
+                       heatcolors = colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(100),
+)
+#the plot is stored here
+p$plot
+
+# table used for plot is here
+p$tax_tab[1:3,1:3]
+
+library(microbiomeMarker)
+
+#h.map <- plot_heatmap(physeq.fam.rel, method="PCoA", distance="bray", taxa.label = "Family", sample.order = unique(sample_names(physeq))) + facet_grid(~life_stage, scales = "free_x", drop = TRUE) + theme_bw() + theme(axis.text.x = element_text(face = "bold", angle = 45, hjust = 1)) + theme(legend.key = element_blank(),strip.background = element_rect(colour="black", fill="white"))
+
+# Make bacterial names italics
+#h.map <- theme(axis.text.y = element_text(colour = 'black', size = 10, face = 'italic'))
+
+# Change the color palette
+#h.map <- h.map + scale_fill_distiller("Abundance", palette = "RdYlBu")
+
+# clean the x-axis
+#h.map <- h.map + rremove("x.text")
+
+#print(h.map)
+
+# Saving the plot
+#ggsave("heatmap_family.png", width = 14, height = 10, dpi = 300)
+
+#------------------------------------------------------------------------------------------#
+
+physeq_df <- microbiomeutilities::phy_to_ldf(physeq_fam, 
+                                             transform.counts = "compositional")
+
+# An additonal column Sam_rep with sample names is created for reference purpose
+colnames(physeq_df)
+
+# Box plot at Family level
+
+ggstripchart(physeq_df, "life_stage", "Abundance", 
+             facet.by = "Family", color = "life_stage",
+             palette = "jco") + rremove("x.text")
+
+ggsave("barplot_family.png", width = 14, height = 10, dpi = 300)
+
+mycols <- c("slategray2", "olivedrab")
+
+plot_taxa_boxplot(physeq,
+                  taxonomic.level = "Phylum",
+                  top.otu = 6, 
+                  group = "life_stage",
+                  add.violin= FALSE,
+                  title = "Top three family", 
+                  keep.other = FALSE,
+                  group.order = c("No", "Yes"),
+                  group.colors = mycols,
+                  dot.size = 2) + theme_biome_utils()
+
+ggsave("top_three_boxplot_family-colored.png", width = 14, height = 10, dpi = 300)
+
+physeq.gen <- aggregate_taxa(physeq,"Genus")
+
+dom.tax <- dominant_taxa(physeq,level = "Genus", group="life_stage")
+head(dom.tax$dominant_overview)
+
+taxa_summary(physeq, "Phylum")
+
+
+grp_abund <- get_group_abundances(physeq, 
+                                  level = "Phylum", 
+                                  group="life_stage",
+                                  transform = "compositional")
+
+# clean names 
+grp_abund$OTUID <- gsub("p__", "",grp_abund$OTUID)
+grp_abund$OTUID <- ifelse(grp_abund$OTUID == "", 
+                          "Unclassified", grp_abund$OTUID)
+
+mean.plot <- grp_abund %>% # input data
+  ggplot(aes(x= reorder(OTUID, mean_abundance), # reroder based on mean abundance
+             y= mean_abundance,
+             fill=life_stage)) + # x and y axis 
+  geom_bar(     stat = "identity", 
+                position=position_dodge()) + 
+  scale_fill_manual("life_stage", values=mycols) + # manually specify colors
+  theme_bw() + # add a widely used ggplot2 theme
+  ylab("Mean Relative Abundance") + # label y axis
+  xlab("Phylum") + # label x axis
+  coord_flip() # rotate plot 
+
+mean.plot
+
+ggsave("mean-relative-abundance.png", width = 14, height = 10, dpi = 300)
+
+#------------------------------------------------------------------------------------------#
+
+ggrare(physeq, step = 50, color="life_stage", label = "Sample", se = TRUE)
+
+plot_richness(physeq_rarefy, measures="Shannon")
+a.div <- plot_richness(physeq_rarefy, x="life_stage", measures=c("Shannon", "simpson", "Observed"), color = "life_stage") + geom_boxplot() + theme_bw()
+
+# adding statistical support
+a.div + stat_compare_means(
+  
+  label = "p.signif",
+  tip.length = 0.05,
+  symnum.args = list(
+    cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), 
+    symbols = c("xxxx", "***", "**", "*", "ns")
+  ),
+  method = "wilcox.test")
+
+richness <- estimate_richness(physeq_rarefy,measures=c("Shannon", "simpson", "Observed"))
+
+ggsave("alpha-diversity-richness.png",width = 14, height = 10, dpi = 300)
+
+write.csv(richness, file = "alpha_div.csv")
+
+plot_diversity_stats(physeq, group = "life_stage", 
+                     index = "diversity_shannon", 
+                     group.order = c("No", "Yes"),                      
+                     group.colors = mycols,
+                     label.format="p.format",
+                     stats = TRUE) + ylab("Shannon Diversity") + xlab("")
+
+ggsave("shannon.png", width = 14, height = 10, dpi = 300)
+
+#------------------------------------------------------------------------------------------#
+
+physeq.ord <- ordinate(physeq_rarefy, "PCoA", "bray")
+b.div.bray <- plot_ordination(physeq_rarefy, physeq.ord, type= "samples", color= "life_stage") + geom_point(size=3)
+b.div.bray <- b.div.bray + stat_ellipse() + ggtitle("Bray Curtis")  + theme_classic() + scale_color_brewer("Location", palette = "Set2")
+print(b.div.bray)
+
+ggsave("bray.png", width = 14, height = 10, dpi = 300)
+
+# convert ot relative abundance
+physeq_rel <- microbiome::transform(physeq, "compositional")
+physeq.ord.wuni <- ordinate(physeq_rel, "PCoA", "unifrac", weighted=T)
+b.div.wuni <- plot_ordination(physeq_rel, physeq.ord.wuni, type= "samples", color= "life_stage") + geom_point(size=3)
+b.div.wuni <- b.div.wuni + stat_ellipse() + ggtitle("Weighted Unifrac")  + theme_classic() + scale_color_brewer("Location", palette = "Set2")
+print(b.div.wuni)
+
+ggsave("weighed-unifrac.png", width = 14, height = 10, dpi = 300)
+
+otu <- abundances(physeq_rel)
+meta <- meta(physeq_rel)
+
+
+#Statistics - Bdiv
+permanova <- adonis(t(otu) ~ life_stage, data = meta, permutations=99, method = "bray")
+
+#P-value
+print(as.data.frame(permanova$aov.tab)["life_stage", "Pr(>F)"])
+
+# adonis2
+permanova <- adonis2(t(otu) ~ life_stage, data = meta, permutations=99, method = "bray")
+permanova
+capture.output(permanova, file = "permanova.txt")
+
+#Pair - wise stats
+dist <- vegdist(t(otu), "bray")
+anova(betadisper(dist, meta$life_stage))
+
+permutest(betadisper(dist, meta$life_stage), pairwise = TRUE)
+
+#------------------------------------------------------------------------------------------#
+#10
+physeq.gut <- subset_samples(physeq, life_stage == "No")
+
+# convert to relative abundance  
+physeq.gut.rel <- microbiome::transform(physeq.gut, "compositional")
+
+physeq.gut.rel2 <- prune_taxa(taxa_sums(physeq.gut.rel) > 0, physeq.gut.rel)
+
+core.taxa.standard <- core_members(physeq.gut.rel2, detection = 0.0001, prevalence = 10/100)
+print(core.taxa.standard)
+
+# Extract the taxonomy table
+taxonomy_core <- as.data.frame(tax_table(physeq.gut.rel2))
+
+# Subset this taxonomy table to include only core OTUs
+core_taxa_id <- subset(taxonomy_core, rownames(taxonomy_core) %in% core.taxa.standard)
+
+DT::datatable(core_taxa_id)
+
+core.abundance <- sample_sums(core(physeq.gut.rel2, detection = 0.0001, prevalence = 10/100))
+
+DT::datatable(as.data.frame(core.abundance))
+
+# Core with compositionals:
+prevalences <- seq(.05, 1, .05)
+detections <- 10^seq(log10(1e-3), log10(.2), length = 10)
+
+# Also define color palette
+gray <- gray(seq(0,1,length=5))
+p.core <- plot_core(physeq.gut.rel2, 
+                    plot.type = "heatmap", 
+                    colours = rev(brewer.pal(5, "Spectral")),
+                    prevalences = prevalences, 
+                    detections = detections, 
+                    min.prevalence = .1) +
+  xlab("Detection Threshold (Relative Abundance (%))")
+print(p.core)
+#------------------------------------------------------------------------------------------#
+#11
+
+physeq_top_50 <- subset_taxa(physeq, Kingdom=="k__Bacteria")
+physeq_top_50 <- prune_taxa(names(sort(taxa_sums(physeq_top_50),TRUE)[1:50]), physeq_top_50)
+
+# Default plot tree
+plot_tree(physeq_top_50)
+
+# Add genus labels to the tree and bootstrap values
+plot_tree(physeq_top_50, label.tips="Genus", ladderize="left")
+
+# Remove bootstrap values
+plot_tree(physeq_top_50, nodelabf=nodeplotblank, label.tips="Genus", ladderize="left")
+
+# Color the nodes by category
+plot_tree(physeq_top_50, nodelabf=nodeplotblank, label.tips="Genus", ladderize="left", color="life_stage")
+
+# Add size by abundance
+plot_tree(physeq_top_50, nodelabf=nodeplotblank, label.tips="Genus", ladderize="left", color="life_stage", size="abundance")
+
+# Convert to radial tree
+plot_tree(physeq_top_50, nodelabf=nodeplotblank, label.tips="Genus", ladderize="left", color="life_stage") + coord_polar(theta="y")
+
+phy.hclust <- hclust(UniFrac(physeq_rarefy, weighted = TRUE), method="average")
+
+ggdendrogram(phy.hclust, rotate = TRUE, theme_dendro = TRUE)
+
+plot_net(physeq_rel, maxdist = 0.8, color = "life_stage")
+#change distance to Jaccard
+plot_net(physeq_rel, maxdist = 0.8, color = "life_stage", distance="jaccard")
+
+ggsave("network.png", width = 14, height = 10, dpi = 300)
+
+ig <- make_network(physeq_rel, max.dist=0.8)
+plot_network(ig, physeq_rel)
+
+# Add color label 
+plot_network(ig, physeq_rel, color="life_stage", line_weight=0.4, label=NULL)
+
+#replace the Jaccard (default) distance method with Bray-Curtis
+ig <- make_network(physeq_rel, dist.fun="bray", max.dist=0.8)
+plot_network(ig, physeq_rel, color="life_stage", line_weight=0.4, label=NULL)
+
+ggsave("igraph-network.png", width = 14, height = 10, dpi = 300)
+
+# Install microbiome marker package
+#BiocManager::install("microbiomeMarker")
+# activate microbiome marker package 
+library(microbiomeMarker)
+
+# Differential abundance using lefse
+lefse <- run_lefse(physeq,
+                   wilcoxon_cutoff = 0.01,
+                   norm = "CPM",
+                   group = "life_stage",
+                   kw_cutoff = 0.01,
+                   multigrp_strat = TRUE,
+                   lda_cutoff = 2
+)
+
+head(marker_table(lefse))
+
+# bar plot
+plot_ef_bar(lefse)
+# dot plot
+plot_ef_dot(lefse)
+
+library(metacoder)
+set.seed(1) # This makes the plot appear the same each time it is run 
+heat_tree(obj, 
+          node_label = taxon_names,
+          node_size = n_obs,
+          node_color = Nose, 
+          node_size_axis_label = "OTU count",
+          node_color_axis_label = "Samples with reads",
+          layout = "davidson-harel", # The primary layout algorithm
+          initial_layout = "reingold-tilford") # The layout algorithm that initializes node locations
