@@ -1,0 +1,141 @@
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path data \
+--input-format CasavaOneEightSingleLanePerSampleDirFmt \
+--output-path demux-paired-end.qza
+
+qiime demux summarize \
+--i-data demux-paired-end.qza \
+--o-visualization demux-paired-end.qzv
+
+qiime dada2 denoise-paired \
+--i-demultiplexed-seqs demux-paired-end.qza \
+--p-trunc-len-f 200 \
+--p-trim-left-f 23 \
+--p-trunc-len-r 200 \
+--p-trim-left-r 20 \
+--o-representative-sequences rep-seqs.qza \
+--o-table table.qza \
+--o-denoising-stats stats.qza
+
+qiime feature-table summarize \
+--i-table table.qza \
+--o-visualization table.qzv \
+--m-sample-metadata-file sample-metadata.tsv
+
+qiime feature-table tabulate-seqs \
+--i-data rep-seqs.qza \
+--o-visualization rep-seqs.qzv
+
+#AsthmaCovid19 - 971
+
+qiime feature-table filter-samples \
+--i-table table.qza \
+--p-min-frequency 971 \
+--o-filtered-table filtered-sequences/filtered-table.qza
+
+qiime feature-table filter-features \
+--i-table filtered-sequences/filtered-table.qza \
+--p-min-frequency 10 \
+--o-filtered-table filtered-sequences/feature-frequency-filtered-table.qza
+
+qiime feature-classifier classify-sklearn \
+--i-classifier gg-13-8-99-nb-classifier.qza \
+--i-reads rep-seqs.qza \
+--o-classification taxonomy.qza
+
+qiime metadata tabulate \
+--m-input-file taxonomy.qza \
+--o-visualization taxonomy.qzv
+
+----------------------------------------------------------------------------------------------------------------------------------------
+#Removing Contamination
+
+qiime taxa filter-table \
+--i-table filtered-sequences/feature-frequency-filtered-table.qza \
+--i-taxonomy taxonomy.qza \
+--p-include p__ \
+--p-exclude mitochondria,chloroplast \
+--o-filtered-table filtered-sequences/table-with-phyla-no-mitochondria-chloroplast.qza
+
+qiime taxa filter-table \
+--i-table filtered-sequences/table-with-phyla-no-mitochondria-chloroplast.qza \
+--i-taxonomy taxonomy.qza \
+--p-exclude "k__Archaea" \
+--o-filtered-table filtered-sequences/table-with-phyla-no-mitochondria-chloroplasts-archaea.qza
+
+qiime taxa filter-table \
+--i-table filtered-sequences/table-with-phyla-no-mitochondria-chloroplasts-archaea.qza \
+--i-taxonomy taxonomy.qza \
+--p-exclude "k__Eukaryota" \
+--o-filtered-table filtered-sequences/table-with-phyla-no-mitochondria-chloroplasts-archaea-eukaryota.qza
+
+qiime taxa filter-seqs \
+--i-sequences rep-seqs.qza \
+--i-taxonomy taxonomy.qza \
+--p-include p__ \
+--p-exclude mitochondria,chloroplast \
+--o-filtered-sequences filtered-sequences/rep-seqs-with-phyla-no-mitochondria-chloroplast.qza
+
+qiime taxa filter-seqs \
+--i-sequences filtered-sequences/rep-seqs-with-phyla-no-mitochondria-chloroplast.qza \
+--i-taxonomy taxonomy.qza \
+--p-exclude "k__Archaea" \
+--o-filtered-sequences filtered-sequences/rep-seqs-with-phyla-no-mitochondria-chloroplasts-archaea.qza
+
+qiime taxa filter-seqs \
+--i-sequences filtered-sequences/rep-seqs-with-phyla-no-mitochondria-chloroplasts-archaea.qza \
+--i-taxonomy taxonomy.qza \
+--p-exclude "k__Eukaryota" \
+--o-filtered-sequences filtered-sequences/rep-seqs-with-phyla-no-mitochondria-chloroplasts-archaea-eukaryota.qza
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+qiime taxa barplot \
+--i-table filtered-sequences/filtered-table2.qza \
+--i-taxonomy taxonomy.qza \
+--m-metadata-file sample-metadata.tsv \
+--o-visualization taxa-bar-plots.qzv
+
+qiime phylogeny align-to-tree-mafft-fasttree \
+--i-sequences filtered-sequences/filtered-rep-seqs.qza \
+--o-alignment aligned-rep-seqs.qza \
+--o-masked-alignment masked-aligned-rep-seqs.qza \
+--o-tree unrooted-tree.qza \
+--o-rooted-tree rooted-tree.qza
+
+qiime feature-table summarize \
+--i-table filtered-sequences/filtered-table2.qza \
+--o-visualization filtered-sequences/filtered-table2.qzv \
+--m-sample-metadata-file sample-metadata.tsv
+
+#asthma_covid19 - 751
+
+qiime diversity core-metrics-phylogenetic \
+--i-phylogeny rooted-tree.qza \
+--i-table filtered-sequences/filtered-table2.qza \
+--p-sampling-depth 24217 \
+--m-metadata-file sample-metadata.tsv \
+--output-dir diversity-metrics-results
+
+qiime diversity alpha-group-significance \
+--i-alpha-diversity diversity-metrics-results/faith_pd_vector.qza \
+--m-metadata-file sample-metadata.tsv \
+--o-visualization diversity-metrics-results/faith-pd-group-significance.qzv
+
+qiime diversity alpha-group-significance \
+--i-alpha-diversity diversity-metrics-results/shannon_vector.qza \
+--m-metadata-file sample-metadata.tsv \
+--o-visualization diversity-metrics-results/shannon-group-significance.qzv
+
+qiime diversity beta-group-significance \
+--i-distance-matrix diversity-metrics-results/weighted_unifrac_distance_matrix.qza \
+--m-metadata-file sample-metadata.tsv \
+--m-metadata-column life_stage \
+--o-visualization diversity-metrics-results/weighted-unifrac-life-stage-significance.qzv \
+--p-pairwise
+
+qiime emperor plot \
+--i-pcoa diversity-metrics-results/weighted_unifrac_pcoa_results.qza \
+--m-metadata-file sample-metadata.tsv \
+--o-visualization diversity-metrics-results/weighted-unifrac-emperor-life-stage.qzv
